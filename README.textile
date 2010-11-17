@@ -1,0 +1,24 @@
+h1. Matrix Artist
+
+Matrix Artist is a simple web page that helps you in drawing images for the SparkFun RGB Matrix:
+
+http://www.sparkfun.com/products/760
+
+You simply click to draw the image you want, then export the Arduino/Wiring code needed
+to display your image on the matrix.
+
+h2. Usage
+
+You can download the index.html file and run it locally, or find it on my github page here. 
+
+This easiest usage is to just click a spot to cycle through the default color palette 
+(white, red, green, blue, yellow, teal, magenta, black). If you want all clicks to always use the
+same color, choose it from the dropdown.
+
+You can create your own custom list of possible colors in the color palette. (Previously selected
+colors will remain, but any new clicks will pull from your new list of colors.)
+
+When you're done, click the "Gimmie the Code" button and you'll be given the Arduino/Wiring code
+needed to draw that one image. By default you get only the code necessary to define your colors
+and an array representing your image. You can optionally include the wrapper code needed to actually
+run the sketch from scratch.
