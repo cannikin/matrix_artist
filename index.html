@@ -5,11 +5,27 @@
 	<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.4.4/jquery.min.js"></script>
   <script type="text/javascript">
 
+    // helper for iterating through each row of the matrix
+    Array.prototype.inGroupsOf = function(num,block) {
+      var startIndex, endIndex;
+      for(var i=0;i<this.length/num;i++) {
+        startIndex = i * num;
+        endIndex = startIndex + num;
+        console.info("startIndex: " + startIndex + ", endIndex: " + endIndex);
+        block.call(this,this.slice(startIndex,endIndex));
+      }
+    };
+    Array.prototype.eachWithIndex = function(block) {
+      for(var i=0;i<this.length;i++) {
+        block.call(this, this[i], i);
+      }
+    };
+        
     var Matrix = {
       // contains a reference to the container for the matrix graphic
       container:null,
       
-      // an array of all colors to cycle through
+      // an array of default colors to cycle through
       colors:['#000000','#ff0000','#00ff00','#0000ff','#ffff00','#00ffff','#ff00ff','#ffffff'],
       
       // what to start the color variable names with
@@ -39,29 +55,64 @@
           self.changeColor(this,0);   // set the initial state to white
         }).click(function() {
           self.changeColor(this);     // when clicking a cell, cycle through the colors
+          if ($('form textarea').is(':visible')) {
+            self.getCode();
+          }
         });
         
         // setup the 'gimmie the code' button
         var form = '';
         form += '<form id="code">';
+        form += '<div>';
+        form += '<label for="only">Paint With</label>';
+        form += '<select id="only">';
+        form += '<option value="" selected="selected">Cycle Colors</option>';
+        form += '</select>';
+        form += '</div><div>';
+        form += '<select id="show">';
+        form += '<option value="colors" selected="selected">Color Code Only</option>';
+        form += '<option value="all">Color + Rendering Code</option>';
+        form += '</select>';
         form += '<input type="button" value="Gimmie the Code" id="gimmie">';
+        form += '</div><div>';
         form += '<input type="button" value="Reset" id="reset">';
+        form += '</div>';
         form += '<textarea style="display:none;">asdf</textarea>';
         form += '</form>';
         
         this.container.after(form);
+        // populate the color list
+        this.colors.eachWithIndex(function(color,index) {
+          document.getElementById('only').options[index+1] = new Option(color, index);
+        });
+        // click the "gimmie the code" button
         $('#gimmie').click(function() {
           self.getCode();
         });
+        // click the reset button
         $('#reset').click(function() {
           self.reset();
+        });
+        // change the value in the code dropdown
+        $('#show').change(function() {
+          if ($('form textarea').is(':visible')) {
+            self.getCode();
+          }
         });
       },
       
       // changes the color of the cell, either to the next in the chain or to a specific color that was passed in
       changeColor:function(obj,color_index) {
         var new_color = color_index;
+        // is a color picked from "paint with"?
+        if (new_color == undefined && $('#only').val() != '') {
+          new_color = parseInt($('#only').val());
+        }
+        console.info("new_color before final check"+new_color);
+        // if the color index is still blank, just cycle through them
         if (new_color == undefined) {
+          console.info($('#only').val());
+          
           // figure out what the next color in the chain is
           var current_color = $(obj).data('color_index');
           if (current_color == (this.colors.length - 1)) {
@@ -70,18 +121,19 @@
           } else {
             new_color = current_color + 1;
           }
-        } else {
-          // if we passed in a color, use that no matter what
-          new_color = color_index;
         }
+        console.info("new_color before painting"+new_color);
         $(obj).css('backgroundColor',this.colors[new_color]).data('color_index',new_color);
       },
       
+      // resets back to a blank matrix
       reset:function() {
-        var self = this;
-        this.container.find('.cell').each(function() {
-          self.changeColor(this,0);   // set the initial state to white
-        });
+        if (confirm('Are you sure you want to clear the matrix?')) {
+          var self = this;
+          this.container.find('.cell').each(function() {
+            self.changeColor(this,0);   // set the initial state to white
+          });
+        }
       },
       
       // gets the arduino/wiring code
@@ -104,16 +156,21 @@
         }
         
         // generate the array that represents this picture
-        var cell_counter = 1;
         code += "\nbyte image[] = {\n";
-        this.container.find('div.cell').each(function() {
-          code += vars[$(this).data('color_index')] + ',';
-          if (cell_counter % 8 == 0) {
-            code += "\n";
-          }
-          cell_counter++;
+        this.container.find('div.cell').toArray().inGroupsOf(8, function(row) {
+          // flip horizontally for the weird reverse indexing in the matrix
+          $(row.reverse()).each(function() {
+            code += vars[$(this).data('color_index')] + ',';
+          });
+          code += "\n";
         });
-        code += "};";
+        code = code.slice(0,-2);
+        code += "\n};";
+        
+        // check if we should include the rendering code as well
+        if ($('#show').val() == 'all') {
+          code += this.renderCode();
+        }
         
         $('form textarea').text(code).show().select();
       },
@@ -123,7 +180,12 @@
         var red = parseInt(color.substr(1,2),16) & 0xE0;
         var green = parseInt(color.substr(3,2),16) & 0x1C;
         var blue = parseInt(color.substr(5,2),16) & 0x03;
-        return (red | green | blue).toString(16);
+        var color = (red | green | blue);
+        // white is weird, ends up being 0x5F
+        if (color == 0xFF) {
+          color = color - 0xA0;
+        }
+        return color.toString(16);
       },
       
       // figures out the next name in a sequence of alphabetical variable names: AA, AB, AC
@@ -135,6 +197,40 @@
         } else {
           return firstChar + String.fromCharCode(lastChar.charCodeAt(0) + 1);
         }
+      },
+      
+      // code to render the colors to the matrix
+      renderCode:function() {
+        var output = "\n\n// Uses code from Ryan Owens, Copyright SparkFun Electronics\n";
+        output += "const int DATAOUT = 11;       //MOSI\n";
+        output += "const int DATAIN = 12;        //MISO\n";
+        output += "const int SPICLOCK = 13;      //sck\n";
+        output += "const int SLAVESELECT = 10;   //ss\n";
+        output += "int i;\n\n";
+        output += "void setup() {\n";
+        output += "  SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR1);\n";
+        output += "  pinMode(DATAOUT, OUTPUT);\n";
+        output += "  pinMode(DATAIN, INPUT);\n";
+        output += "  pinMode(SPICLOCK,OUTPUT);\n";
+        output += "  pinMode(SLAVESELECT,OUTPUT);\n";
+        output += "  digitalWrite(SLAVESELECT,HIGH);\n";
+        output += "}\n\n";
+        output += "void loop() {\n";
+        output += "  digitalWrite(SLAVESELECT, LOW);\n";
+        output += "  for(int LED=0; LED<64; LED++){\n";
+        output += "    spi_transfer(image[LED]);\n";
+        output += "  }\n";
+        output += "  digitalWrite(SLAVESELECT, HIGH);\n";
+        output += "  delay(1000);  // wait one second and repeat\n";
+        output += "}\n\n";
+        output += "char spi_transfer(volatile char data) {\n";
+        output += "  SPDR = data;\n";
+        output += "  while (!(SPSR & (1<<SPIF)))\n";
+        output += "  {\n";
+        output += "  };\n";
+        output += "  return SPDR;\n";
+        output += "}";
+        return output;
       },
       
       // start the whole thing off
@@ -165,13 +261,14 @@
     form {
       margin: 1em auto;
       text-align: center;
+      position: relative;
       }
       form input {
         }
       form textarea{
         margin: 1em 0;
         width: 45em;
-        height: 26em;
+        height: 27em;
         font-size: 116%;
         font-family: Menlo, Monaco, monospace;
         -moz-border-radius: 6px;
